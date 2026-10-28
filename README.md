@@ -8,7 +8,7 @@ Node.js **24 LTS**、npmを使用します。Dockerは不要です。
 
 ```sh
 npm ci
-cp .env.example .env
+cp env.example .env
 npm run db:migrate
 # .env の INITIAL_ADMIN_EMAIL / INITIAL_ADMIN_PASSWORD を設定してから起動
 npm run dev
