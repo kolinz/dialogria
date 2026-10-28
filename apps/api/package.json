@@ -1,0 +1,33 @@
+{
+  "name": "@dialogria/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@google/genai": "latest",
+    "argon2": "latest",
+    "better-sqlite3": "latest",
+    "compression": "latest",
+    "cookie-parser": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "drizzle-orm": "latest",
+    "express": "latest",
+    "express-rate-limit": "latest",
+    "ffmpeg-static": "latest",
+    "ffprobe-static": "latest",
+    "helmet": "latest",
+    "marked": "^18.1.2",
+    "multer": "latest",
+    "openai": "latest",
+    "pdfmake": "^0.3.13",
+    "sharp": "latest",
+    "socket.io": "latest",
+    "ws": "^8.22.0",
+    "zod": "latest"
+  }
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Dialogria — ローカルUI検証</title>
+    <style>
+      body {
+        font: 14px system-ui;
+        background: #e9eef7;
+        color: #142653;
+        margin: 16px;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        padding: 9px;
+        border: 1px solid #ccd8ec;
+        border-radius: 6px;
+      }
+      iframe {
+        display: block;
+        background: white;
+        border: 0;
+        box-shadow: 0 0 0 1px #ccd8ec;
+      }
+      label {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+      }
+      p {
+        font-size: 12px;
+      }
+      output {
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>ローカルUI検証</strong
+      ><label>画面パス<input id="path" value="/login" /></label
+      ><label
+        >サイズ<select id="size">
+          <option value="375,812">スマートフォン 375 × 812</option>
+          <option value="768,1024">iPad縦 768 × 1024</option>
+          <option value="1024,768">iPad横 1024 × 768</option>
+          <option value="1440,900">PC 1440 × 900</option>
+        </select></label
+      ><button id="open">表示</button>
+    </header>
+    <p>
+      開発サーバー専用。枠内で実際のアプリを表示し、指定したCSSビューポートで検証します。
+    </p>
+    <output id="status"></output
+    ><iframe
+      title="検証対象アプリ"
+      id="frame"
+      width="375"
+      height="812"
+      src="/login"
+    ></iframe>
+    <script type="module">
+      const frame = document.querySelector("#frame");
+      const target = document.querySelector("#path");
+      const size = document.querySelector("#size");
+      document.querySelector("#open").onclick = () => {
+        const [w, h] = size.value.split(",");
+        frame.width = w;
+        frame.height = h;
+        const value = target.value;
+        if (!value.startsWith("/") || value.startsWith("//")) return;
+        frame.src = value;
+      };
+      frame.onload = () => {
+        const doc = frame.contentDocument;
+        document.querySelector("#status").textContent =
+          `実測: ${frame.contentWindow.innerWidth} × ${frame.contentWindow.innerHeight} / 内容幅 ${doc.documentElement.scrollWidth}`;
+      };
+    </script>
+  </body>
+</html>

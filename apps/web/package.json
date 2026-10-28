@@ -1,0 +1,25 @@
+{
+  "name": "@dialogria/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "latest",
+    "@tanstack/react-query": "latest",
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-hook-form": "latest",
+    "react-markdown": "latest",
+    "react-router-dom": "latest",
+    "remark-gfm": "latest",
+    "socket.io-client": "latest",
+    "vite": "latest",
+    "zod": "latest"
+  }
+}
