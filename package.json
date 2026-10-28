@@ -1,0 +1,46 @@
+{
+  "name": "dialogria",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @dialogria/api\" \"npm run dev -w @dialogria/web\"",
+    "build": "npm run build -w @dialogria/api && npm run build -w @dialogria/web",
+    "start": "node apps/api/dist/apps/api/src/index.js",
+    "typecheck": "tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:migrate": "tsx apps/api/src/migrate.ts",
+    "admin:create": "tsx apps/api/src/create-admin.ts",
+    "storage:cleanup": "tsx apps/api/src/cleanup.ts",
+    "format": "prettier --write apps packages tests docs *.json *.ts README.md",
+    "test:start": "node scripts/smoke-start.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/better-sqlite3": "latest",
+    "@types/compression": "latest",
+    "@types/cookie-parser": "latest",
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/multer": "latest",
+    "@types/node": "latest",
+    "@types/pdfmake": "^0.3.3",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/supertest": "latest",
+    "concurrently": "latest",
+    "prettier": "^3.9.10",
+    "supertest": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
