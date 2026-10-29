@@ -620,7 +620,9 @@ export function ProfilePage() {
                   <Download size={20} />
                 </span>
                 <div>
-                  <strong>{j.type} 教材</strong>
+                  <strong>
+                    {j.type === "CLOZE_PDF" ? "穴埋め学習PDF" : j.type} 教材
+                  </strong>
                   <small>
                     {new Date(j.createdAt).toLocaleString("ja-JP")} ·{" "}
                     {j.snapshotId.slice(0, 8)}

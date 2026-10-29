@@ -10,6 +10,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { config } from "./config.js";
 import { getSetting } from "./db.js";
+import type { ClozeExport } from "./cloze.js";
 import type { Message } from "../../../packages/shared/src/index.js";
 
 export const pdfSettingsSchema = z.object({
@@ -270,8 +271,7 @@ export async function conversationPdf(
     pageSize: settings.pageSize,
     pageMargins: [42, 48, 42, 48],
     pageBreakBefore: (node) =>
-      node.headlineLevel === 99 &&
-      node.startPosition.verticalRatio > 0.78,
+      node.headlineLevel === 99 && node.startPosition.verticalRatio > 0.78,
     background: (_page, size) => ({
       image: backdrop,
       width: size.width,
@@ -383,6 +383,106 @@ export async function conversationPdf(
     ],
   };
   return pdfmake.createPdf(definition).getBuffer();
+}
+export async function worksheetPdf(
+  room: { name: string },
+  exercise: ClozeExport,
+  snapshot: { id: string; createdAt: string },
+  settings = pdfSettings(),
+) {
+  const content: Content[] = [
+    {
+      text: "DIALOGRIA / 復習プリント",
+      color: "#64748b",
+      fontSize: 9,
+      margin: [0, 0, 0, 8],
+    },
+    {
+      text: `${room.name} — 専門用語穴埋め問題`,
+      color: "#253d62",
+      fontSize: 19,
+      margin: [0, 0, 0, 12],
+    },
+    {
+      text: "氏名：____________________　日付：________________",
+      fontSize: 11,
+      margin: [0, 5, 0, 18],
+    },
+    {
+      text: "確定済み対話の原文から、専門用語だけを空欄にしています。",
+      fontSize: 9,
+      color: "#64748b",
+      margin: [0, 0, 0, 15],
+    },
+    ...exercise.questions.map((q, i): Content => ({
+      headlineLevel: 98,
+      stack: [
+        {
+          text: [{ text: `問${i + 1}. `, bold: true }, { text: q.text }],
+          margin: [0, 0, 0, 7],
+        },
+        { text: `出典：投稿 ${q.sequenceNo}`, color: "#718096", fontSize: 8 },
+        ...(exercise.answers === "INLINE"
+          ? [
+              {
+                text: `解答：${q.answer}`,
+                color: "#345487",
+                fontSize: settings.fontSize,
+                margin: [0, 7, 0, 0],
+              } as Content,
+            ]
+          : []),
+      ],
+      margin: [0, 0, 0, 20],
+    })),
+  ];
+  if (exercise.answers === "SEPARATE")
+    content.push(
+      {
+        text: `${room.name} — 解答・元の文章`,
+        fontSize: 19,
+        color: "#253d62",
+        pageBreak: "before",
+        margin: [0, 0, 0, 18],
+      },
+      ...exercise.questions.map((q, i): Content => ({
+        headlineLevel: 98,
+        stack: [
+          {
+            text: `問${i + 1}. ${q.answer}`,
+            color: "#345487",
+            fontSize: settings.fontSize + 1,
+            margin: [0, 0, 0, 5],
+          },
+          { text: q.sourceText, margin: [0, 0, 0, 5] },
+          { text: `出典：投稿 ${q.sequenceNo}`, fontSize: 8, color: "#718096" },
+        ],
+        margin: [0, 0, 0, 18],
+      })),
+    );
+  return pdfmake
+    .createPdf({
+      pageSize: settings.pageSize,
+      pageMargins: [42, 44, 42, 48],
+      info: { title: `${room.name} — 専門用語穴埋め問題`, author: "Dialogria" },
+      defaultStyle: {
+        font: settings.font,
+        fontSize: settings.fontSize,
+        lineHeight: 1.5,
+        color: "#24334a",
+      },
+      pageBreakBefore: (node) =>
+        node.headlineLevel === 98 && node.startPosition.verticalRatio > 0.8,
+      footer: (page, count) => ({
+        text: `Dialogria | ${page} / ${count} | 対話 ${snapshot.id.slice(0, 8)}`,
+        fontSize: 8,
+        color: "#718096",
+        alignment: "center",
+        margin: [0, 15, 0, 0],
+      }),
+      content,
+    })
+    .getBuffer();
 }
 export const pdfPreview = (settings: PdfSettings) =>
   conversationPdf(

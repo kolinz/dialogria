@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS room_invites(id TEXT PRIMARY KEY,room_id TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS room_sequence_counters(room_id TEXT PRIMARY KEY REFERENCES rooms(id),last_sequence INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),sequence_no INTEGER NOT NULL,author_id TEXT REFERENCES users(id),speaker_id TEXT NOT NULL,mode TEXT NOT NULL,original_text TEXT NOT NULL,final_text TEXT NOT NULL,client_id TEXT NOT NULL,reply_to TEXT UNIQUE REFERENCES messages(id),created_at TEXT NOT NULL,UNIQUE(room_id,sequence_no),UNIQUE(room_id,author_id,client_id));
 CREATE TABLE IF NOT EXISTS export_snapshots(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),created_by TEXT NOT NULL REFERENCES users(id),created_at TEXT NOT NULL,room_data TEXT NOT NULL,last_sequence INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cloze_drafts(id TEXT PRIMARY KEY,snapshot_id TEXT NOT NULL REFERENCES export_snapshots(id),created_by TEXT NOT NULL REFERENCES users(id),data TEXT NOT NULL,expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS export_snapshot_items(snapshot_id TEXT NOT NULL REFERENCES export_snapshots(id),sequence_no INTEGER NOT NULL,message_id TEXT NOT NULL REFERENCES messages(id),data TEXT NOT NULL,PRIMARY KEY(snapshot_id,sequence_no),UNIQUE(snapshot_id,message_id));
 CREATE TABLE IF NOT EXISTS export_jobs(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),snapshot_id TEXT NOT NULL REFERENCES export_snapshots(id),created_by TEXT NOT NULL REFERENCES users(id),type TEXT NOT NULL,status TEXT NOT NULL,progress INTEGER NOT NULL DEFAULT 0,options TEXT,error TEXT,file_name TEXT,duration_ms REAL,size INTEGER,attempts INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audio_segments(cache_key TEXT PRIMARY KEY,file_name TEXT NOT NULL,duration_ms REAL NOT NULL,created_at TEXT NOT NULL);
@@ -44,6 +45,7 @@ CREATE INDEX IF NOT EXISTS jobs_status ON export_jobs(status,created_at);
 CREATE TRIGGER IF NOT EXISTS immutable_lecturer_version BEFORE UPDATE ON ai_lecturer_versions BEGIN SELECT RAISE(ABORT,'immutable version'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_snapshot_items BEFORE UPDATE ON export_snapshot_items BEGIN SELECT RAISE(ABORT,'immutable snapshot'); END;
 INSERT OR IGNORE INTO schema_migrations VALUES(1,datetime('now'));
+INSERT OR IGNORE INTO schema_migrations VALUES(3,datetime('now'));
 `);
     sqlite.transaction(() => {
         if (!all("PRAGMA table_info(rooms)").some((column) => column.name === "lecturer_speech_max_chars")) {

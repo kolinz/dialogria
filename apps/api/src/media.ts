@@ -15,7 +15,13 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { conversationPdf, pdfSettings, pdfSettingsSchema } from "./pdf.js";
+import type { ClozeExport } from "./cloze.js";
+import {
+  conversationPdf,
+  worksheetPdf,
+  pdfSettings,
+  pdfSettingsSchema,
+} from "./pdf.js";
 import sharp, { type OverlayOptions } from "sharp";
 import { config } from "./config.js";
 import {
@@ -335,12 +341,24 @@ export function enqueue(
   type: string,
   snapshotId?: string,
   options?: VideoOptions,
+  cloze?: ClozeExport,
 ) {
   checkExport(type);
   roomAccess(roomId, userId);
   const s = systemSettings();
   const exportOptions =
-    type === "PDF" ? { ...pdfSettings(), renderVersion: 3 } : options;
+    type === "PDF"
+      ? { ...pdfSettings(), renderVersion: 3 }
+      : type === "CLOZE_PDF"
+        ? { ...pdfSettings(), renderVersion: 1, cloze }
+        : options;
+  if (type === "CLOZE_PDF")
+    requireThat(
+      cloze?.questions.length,
+      422,
+      "QUESTIONS_REQUIRED",
+      "確認済みの問題を選択してください",
+    );
   if (type === "MP4") {
     requireThat(options, 422, "OPTIONS_REQUIRED", "動画設定が必要です");
     if (options.mode === "GENERATED_SCENES") {
@@ -526,7 +544,7 @@ export async function renderJob(job: JobRow) {
   )!;
   const room = JSON.parse(snap.room_data) as RoomRow;
   let duration = 0;
-  const output = `${job.id}.${job.type === "MARKDOWN" ? "md" : job.type.toLowerCase()}`;
+  const output = `${job.id}.${job.type === "MARKDOWN" ? "md" : job.type === "CLOZE_PDF" ? "pdf" : job.type.toLowerCase()}`;
   try {
     if (job.type === "MARKDOWN") {
       const safe = (v: string) =>
@@ -540,6 +558,20 @@ export async function renderJob(job: JobRow) {
           )
           .join("\n");
       await writeFile(mediaPath(output), content, "utf8");
+    } else if (job.type === "CLOZE_PDF") {
+      const options = JSON.parse(job.options!) as ReturnType<
+        typeof pdfSettings
+      > & { cloze: ClozeExport };
+      const settings = pdfSettingsSchema.parse(options);
+      await writeFile(
+        mediaPath(output),
+        await worksheetPdf(
+          room,
+          options.cloze,
+          { id: job.snapshot_id, createdAt: snap.created_at },
+          settings,
+        ),
+      );
     } else if (job.type === "PDF") {
       const settings = pdfSettingsSchema.parse(JSON.parse(job.options!));
       await writeFile(

@@ -89,6 +89,10 @@ export function apiKey(which) {
             : "";
 }
 export function saveProviders(value) {
+    const before = Object.fromEntries(["TEXT", "TTS", "VIDEO"].map((purpose) => [
+        purpose,
+        connectionFingerprint(purpose),
+    ]));
     const { geminiKey, openaiKey, ...publicSettings } = value;
     setSetting("providers", publicSettings);
     if (geminiKey !== undefined)
@@ -96,7 +100,8 @@ export function saveProviders(value) {
     if (openaiKey !== undefined)
         setSetting("openaiKey", openaiKey ? encrypt(openaiKey) : "");
     for (const purpose of ["TEXT", "TTS", "VIDEO"])
-        setSetting(`verified:${purpose}`, null);
+        if (before[purpose] !== connectionFingerprint(purpose))
+            setSetting(`verified:${purpose}`, null);
 }
 export function localUrl(value) {
     const u = new URL(value);
@@ -399,6 +404,7 @@ export async function testConnection(purpose, allowCharge = false) {
     return choices;
 }
 export const systemSchema = z.object({
+    exportClozeEnabled: z.boolean().default(true),
     exportVideoEnabled: z.boolean(),
     exportAudioEnabled: z.boolean(),
     exportTextEnabled: z.boolean(),
@@ -415,22 +421,25 @@ export const systemSchema = z.object({
     maxVideoBudget: z.number().min(0.01).max(100),
     sceneCostCeiling: z.number().min(0.001).max(10),
 });
-export const systemSettings = () => getSetting("system", {
-    exportVideoEnabled: false,
-    exportAudioEnabled: false,
-    exportTextEnabled: true,
-    registrationEnabled: true,
-    maxRooms: 20,
-    maxMembers: 30,
-    maxMessageLength: 2000,
-    maxAudioMinutes: 60,
-    maxVideoMinutes: 10,
-    maxVideoScenes: 20,
-    maxExportMb: 500,
-    retentionDays: 7,
-    maxDailyScenes: 50,
-    maxVideoBudget: 5,
-    sceneCostCeiling: 1,
+export const systemSettings = () => ({
+    exportClozeEnabled: true,
+    ...getSetting("system", {
+        exportVideoEnabled: false,
+        exportAudioEnabled: false,
+        exportTextEnabled: true,
+        registrationEnabled: true,
+        maxRooms: 20,
+        maxMembers: 30,
+        maxMessageLength: 2000,
+        maxAudioMinutes: 60,
+        maxVideoMinutes: 10,
+        maxVideoScenes: 20,
+        maxExportMb: 500,
+        retentionDays: 7,
+        maxDailyScenes: 50,
+        maxVideoBudget: 5,
+        sceneCostCeiling: 1,
+    }),
 });
 export function verified(purpose) {
     const v = getSetting(`verified:${purpose}`, null);
@@ -448,6 +457,10 @@ export function capabilities() {
         PDF: {
             available: s.exportTextEnabled,
             reason: s.exportTextEnabled ? "" : "管理者により無効",
+        },
+        CLOZE_PDF: {
+            available: s.exportTextEnabled && s.exportClozeEnabled,
+            reason: s.exportTextEnabled && s.exportClozeEnabled ? "" : "管理者により無効",
         },
         MP3: {
             available: s.exportAudioEnabled && verified("TTS"),

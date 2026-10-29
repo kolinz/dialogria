@@ -31,6 +31,7 @@ const media = await import("../apps/api/src/media.js");
 const pdf = await import("../apps/api/src/pdf.js");
 const access = await import("../apps/api/src/access.js");
 const spokenTexts: string[] = [];
+let clozeModelResponse: string | null = null;
 const { createRealtimeServer } = await import("../apps/api/src/server.js");
 const realtime = createRealtimeServer();
 const { encrypt, decrypt } = await import("../apps/api/src/config.js");
@@ -88,7 +89,9 @@ beforeAll(async () => {
     if (req.url === "/api/chat")
       return res.end(
         JSON.stringify({
-          message: { content: "これはテスト用のAI応答です。" },
+          message: {
+            content: clozeModelResponse ?? "これはテスト用のAI応答です。",
+          },
         }),
       );
     if (req.url === "/speakers")
@@ -614,6 +617,39 @@ describe("出力制御・プロバイダー・固定教材", () => {
       ).status,
     ).toBe(200);
   });
+  it("画面で選択した設定を接続テスト時に保存し、再取得しても保持する", async () => {
+    await admin
+      .patch("/api/admin/providers")
+      .set("X-CSRF-Token", adminCsrf)
+      .send({ ...settings(), textModel: "old-model" });
+    expect(provider.verified("TEXT")).toBe(false);
+    expect(provider.verified("TTS")).toBe(true);
+    const tested = await admin
+      .post("/api/admin/providers/test")
+      .set("X-CSRF-Token", adminCsrf)
+      .send({ purpose: "TEXT", settings: settings() });
+    expect(tested.status, tested.text).toBe(200);
+    const restored = (await admin.get("/api/admin/providers")).body.data;
+    expect(restored.textProvider).toBe("OLLAMA");
+    expect(restored.textModel).toBe("test-model");
+    expect(restored.textUrl).toBe(settings().textUrl);
+    expect(restored.verified.TEXT).toBe(true);
+    expect(restored.verified.TTS).toBe(true);
+    const failed = await admin
+      .post("/api/admin/providers/test")
+      .set("X-CSRF-Token", adminCsrf)
+      .send({ purpose: "TEXT", settings: { ...settings(), textModel: "" } });
+    expect(failed.status).toBe(409);
+    const afterFailure = (await admin.get("/api/admin/providers")).body.data;
+    expect(afterFailure.textProvider).toBe("OLLAMA");
+    expect(afterFailure.textModel).toBe("");
+    expect(afterFailure.verified.TEXT).toBe(false);
+    const retry = await admin
+      .post("/api/admin/providers/test")
+      .set("X-CSRF-Token", adminCsrf)
+      .send({ purpose: "TEXT", settings: settings() });
+    expect(retry.status, retry.text).toBe(200);
+  });
   it("AI拡張は候補を生成するだけで投稿を増やさない", async () => {
     const r = await a
       .post("/api/ai/expand")
@@ -762,6 +798,180 @@ describe("出力制御・プロバイダー・固定教材", () => {
       exportTextEnabled: true,
     });
     await admin.delete("/api/admin/pdf").set("X-CSRF-Token", adminCsrf);
+  });
+  it("穴埋めPDFはローカル抽出・手動選択・出典照合・権限・管理停止に対応", async () => {
+    const r = await a
+      .post("/api/rooms")
+      .set("X-CSRF-Token", aCsrf)
+      .send({ name: "穴埋めテスト", type: "PEER", visibility: "PRIVATE" });
+    expect(r.status, r.text).toBe(201);
+    const rid = r.body.data.id;
+    const sourceText =
+      "Pythonでは複数の値を順序付きで管理するデータ型をリストといいます。\n繰り返し処理にはfor文やwhile文を利用します。";
+    access.insertMessage(
+      rid,
+      aId,
+      aId,
+      "ORIGINAL",
+      sourceText,
+      sourceText,
+      db.id(),
+    );
+    const snap = (
+      await a.post(`/api/rooms/${rid}/snapshots`).set("X-CSRF-Token", aCsrf)
+    ).body.data.id;
+    const sources = await a.get(
+      `/api/rooms/${rid}/cloze-sources?snapshotId=${snap}`,
+    );
+    expect(sources.status, sources.text).toBe(200);
+    expect(sources.body.data.provider).toBe("OLLAMA");
+    expect(sources.body.data.sources).toHaveLength(2);
+    expect(
+      (await b.get(`/api/rooms/${rid}/cloze-sources?snapshotId=${snap}`))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await a
+          .post(`/api/rooms/${rid}/cloze-drafts`)
+          .send({ snapshotId: snap })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await a
+          .post(`/api/rooms/${rid}/cloze-drafts`)
+          .set("X-CSRF-Token", aCsrf)
+          .send({ snapshotId: snapshot, consent: true })
+      ).status,
+    ).toBe(404);
+    const payload = {
+      snapshotId: snap,
+      mode: "MANUAL",
+      terms: [{ sourceId: "s1", term: "リスト" }],
+    };
+    const manual = await a
+      .post(`/api/rooms/${rid}/cloze-drafts`)
+      .set("X-CSRF-Token", aCsrf)
+      .send(payload);
+    expect(manual.status, manual.text).toBe(201);
+    expect(
+      manual.body.data.questions[0].text.replaceAll(
+        "（　　　　　　　　）",
+        "リスト",
+      ),
+    ).toBe(manual.body.data.questions[0].sourceText);
+    expect(
+      (
+        await a
+          .post(`/api/rooms/${rid}/cloze-drafts`)
+          .set("X-CSRF-Token", aCsrf)
+          .send({
+            ...payload,
+            terms: [{ sourceId: "s1", term: "存在しない専門用語" }],
+          })
+      ).status,
+    ).toBe(422);
+    clozeModelResponse = JSON.stringify({
+      terms: [
+        { sourceId: "s1", term: "リスト" },
+        { sourceId: "s2", term: "for" },
+        { sourceId: "s1", term: "捏造した用語" },
+      ],
+    });
+    let auto;
+    try {
+      auto = await a
+        .post(`/api/rooms/${rid}/cloze-drafts`)
+        .set("X-CSRF-Token", aCsrf)
+        .send({ snapshotId: snap, consent: true, count: 10 });
+    } finally {
+      clozeModelResponse = null;
+    }
+    expect(auto.status, auto.text).toBe(201);
+    expect(auto.body.data.questions).toHaveLength(2);
+    const draft = auto.body.data;
+    const exportBody = {
+      type: "CLOZE_PDF",
+      snapshotId: snap,
+      options: {
+        draftId: draft.id,
+        questionIds: draft.questions.map((q: { id: string }) => q.id),
+        answers: "SEPARATE",
+      },
+    };
+    const exported = await a
+      .post(`/api/rooms/${rid}/exports`)
+      .set("X-CSRF-Token", aCsrf)
+      .send(exportBody);
+    expect(exported.status, exported.text).toBe(202);
+    expect(
+      (
+        await a
+          .post(`/api/rooms/${rid}/exports`)
+          .set("X-CSRF-Token", aCsrf)
+          .send({
+            ...exportBody,
+            options: { ...exportBody.options, questionIds: ["made-up"] },
+          })
+      ).status,
+    ).toBe(422);
+    await media.tick();
+    const job = db.one<import("../apps/api/src/db.js").JobRow>(
+      "SELECT * FROM export_jobs WHERE id=?",
+      exported.body.data.id,
+    )!;
+    expect(job.status, job.error ?? "").toBe("ready");
+    expect(job.file_name).toMatch(/\.pdf$/);
+    expect(
+      (await readFile(media.mediaPath(job.file_name!)))
+        .subarray(0, 4)
+        .toString(),
+    ).toBe("%PDF");
+    expect((await a.get(`/api/exports/${job.id}/download`)).status).toBe(200);
+    expect((await b.get(`/api/exports/${job.id}/download`)).status).toBe(403);
+    expect(
+      (
+        await admin
+          .patch("/api/admin/system")
+          .set("X-CSRF-Token", adminCsrf)
+          .send({
+            ...provider.systemSettings(),
+            exportClozeEnabled: false,
+          })
+      ).status,
+    ).toBe(200);
+    expect((await a.get(`/api/exports/${job.id}/download`)).status).toBe(403);
+    expect(
+      (
+        await a
+          .post(`/api/rooms/${rid}/exports`)
+          .set("X-CSRF-Token", aCsrf)
+          .send(exportBody)
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await a
+          .post(`/api/rooms/${rid}/cloze-drafts`)
+          .set("X-CSRF-Token", aCsrf)
+          .send(payload)
+      ).status,
+    ).toBe(403);
+    expect(
+      (await a.get("/api/export-capabilities")).body.data.PDF.available,
+    ).toBe(true);
+    expect(
+      (
+        await admin
+          .patch("/api/admin/system")
+          .set("X-CSRF-Token", adminCsrf)
+          .send({
+            ...provider.systemSettings(),
+            exportClozeEnabled: true,
+          })
+      ).status,
+    ).toBe(200);
   });
   it("未試聴Bも含む全3投稿をMP3へ各1回収録", async () => {
     const r = await a
@@ -1055,6 +1265,58 @@ describe("講師と管理の整合性", () => {
         })
       ).status,
     ).toBe(422);
+  });
+  it("AI講師ルームの確定済み回答も穴埋めPDFにできる", async () => {
+    const rid = db.one<{ id: string }>(
+      "SELECT id FROM rooms WHERE name='講師版テスト'",
+    )!.id;
+    const sourceText =
+      "Pythonで処理をまとめて再利用する仕組みを関数といいます。";
+    access.insertMessage(
+      rid,
+      null,
+      "lecturer",
+      "AI_LECTURER",
+      sourceText,
+      sourceText,
+      db.id(),
+    );
+    const snap = (
+      await a.post(`/api/rooms/${rid}/snapshots`).set("X-CSRF-Token", aCsrf)
+    ).body.data.id;
+    const sources = (
+      await a.get(`/api/rooms/${rid}/cloze-sources?snapshotId=${snap}`)
+    ).body.data.sources;
+    const source = sources.find((s: { text: string }) => s.text === sourceText);
+    expect(source).toBeTruthy();
+    const draft = await a
+      .post(`/api/rooms/${rid}/cloze-drafts`)
+      .set("X-CSRF-Token", aCsrf)
+      .send({
+        snapshotId: snap,
+        mode: "MANUAL",
+        terms: [{ sourceId: source.id, term: "関数" }],
+      });
+    expect(draft.status, draft.text).toBe(201);
+    const exported = await a
+      .post(`/api/rooms/${rid}/exports`)
+      .set("X-CSRF-Token", aCsrf)
+      .send({
+        type: "CLOZE_PDF",
+        snapshotId: snap,
+        options: {
+          draftId: draft.body.data.id,
+          questionIds: [draft.body.data.questions[0].id],
+        },
+      });
+    expect(exported.status, exported.text).toBe(202);
+    await media.tick();
+    expect(
+      db.one<{ status: string }>(
+        "SELECT status FROM export_jobs WHERE id=?",
+        exported.body.data.id,
+      )?.status,
+    ).toBe("ready");
   });
   it("管理者強制削除は理由必須・削除後の参照を拒否", async () => {
     expect(

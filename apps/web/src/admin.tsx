@@ -320,6 +320,36 @@ function ProviderSettings() {
       </>
     );
   const set = (k: keyof Provider, v: string) => setForm({ ...form, [k]: v });
+  const isVerified = (purpose: "TEXT" | "TTS" | "VIDEO") => {
+    const keys: (keyof Provider)[] =
+      purpose === "TEXT"
+        ? [
+            "textProvider",
+            "textModel",
+            "textUrl",
+            ...(form.textProvider === "GEMINI"
+              ? ["geminiKey" as const]
+              : form.textProvider === "OPENAI"
+                ? ["openaiKey" as const]
+                : []),
+          ]
+        : purpose === "TTS"
+          ? [
+              "ttsProvider",
+              "ttsModel",
+              "voice",
+              "speed",
+              "voicevoxUrl",
+              ...(form.ttsProvider === "OPENAI_TTS"
+                ? ["openaiKey" as const]
+                : []),
+            ]
+          : ["videoModel", "geminiKey"];
+    return (
+      !!q.data?.verified[purpose] &&
+      keys.every((key) => form[key] === q.data?.[key])
+    );
+  };
   async function save() {
     await api("/admin/providers", "PATCH", form);
     await q.refetch();
@@ -437,8 +467,8 @@ function ProviderSettings() {
                     ? "音声合成"
                     : "動画生成"}
               </h2>
-              <Badge color={form.verified[purpose] ? "green" : ""}>
-                {form.verified[purpose] ? "接続検証済み" : "未検証"}
+              <Badge color={isVerified(purpose) ? "green" : ""}>
+                {isVerified(purpose) ? "接続検証済み" : "未検証"}
               </Badge>
             </div>
             {purpose === "TEXT" ? (
@@ -603,12 +633,18 @@ function ProviderSettings() {
                       )
                     )
                       return;
-                    await api("/admin/providers/test", "POST", {
-                      purpose,
-                      allowCharge: purpose === "VIDEO",
-                    });
-                    await q.refetch();
-                    toast("実接続テストに成功しました");
+                    try {
+                      await api("/admin/providers/test", "POST", {
+                        purpose,
+                        settings: form,
+                        allowCharge: purpose === "VIDEO",
+                      });
+                      toast(
+                        "選択中の接続設定を保存し、実接続テストに成功しました",
+                      );
+                    } finally {
+                      await q.refetch();
+                    }
                   })
                 }
               >
@@ -623,6 +659,7 @@ function ProviderSettings() {
   );
 }
 const systemLabels: Record<string, string> = {
+  exportClozeEnabled: "穴埋め学習PDF（生成・ダウンロード）",
   exportVideoEnabled: "動画教材（MP4）",
   exportAudioEnabled: "音声教材（MP3・個別発話）",
   exportTextEnabled: "テキスト教材（Markdown・PDF）",
@@ -814,11 +851,13 @@ function SystemSettings() {
             .filter(([key]) => typeof form[key] === "boolean")
             .map(([key, label]) => {
               const type =
-                  key === "exportVideoEnabled"
-                    ? "MP4"
-                    : key === "exportAudioEnabled"
-                      ? "MP3"
-                      : "MARKDOWN",
+                  key === "exportClozeEnabled"
+                    ? "CLOZE_PDF"
+                    : key === "exportVideoEnabled"
+                      ? "MP4"
+                      : key === "exportAudioEnabled"
+                        ? "MP3"
+                        : "MARKDOWN",
                 caps = form.capabilities as
                   | Record<string, { available: boolean; reason: string }>
                   | undefined;

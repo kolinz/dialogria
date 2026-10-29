@@ -1278,6 +1278,22 @@ dialog > header button {
   flex: 1;
   min-width: 0;
 }
+.cloze-source,
+.cloze-candidate {
+  padding: 14px;
+  margin: 12px 0;
+  border: 1px solid #e1e8f3;
+  border-radius: 10px;
+  background: #f6f8fc;
+  overflow-wrap: anywhere;
+}
+.cloze-candidates {
+  margin-top: 24px;
+}
+.cloze-candidate details {
+  font-size: 12px;
+  color: #61738c;
+}
 .message-meta {
   display: flex;
   align-items: center;

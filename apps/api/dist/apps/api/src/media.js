@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { writeFile, readFile, stat, rm, mkdtemp, } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { conversationPdf, pdfSettings, pdfSettingsSchema } from "./pdf.js";
+import { conversationPdf, worksheetPdf, pdfSettings, pdfSettingsSchema, } from "./pdf.js";
 import sharp from "sharp";
 import { config } from "./config.js";
 import { one, run, all, id, now, sqlite, audit, } from "./db.js";
@@ -207,11 +207,17 @@ export function jobDto(j) {
         options: j.options ? JSON.parse(j.options) : null,
     };
 }
-export function enqueue(roomId, userId, type, snapshotId, options) {
+export function enqueue(roomId, userId, type, snapshotId, options, cloze) {
     checkExport(type);
     roomAccess(roomId, userId);
     const s = systemSettings();
-    const exportOptions = type === "PDF" ? { ...pdfSettings(), renderVersion: 3 } : options;
+    const exportOptions = type === "PDF"
+        ? { ...pdfSettings(), renderVersion: 3 }
+        : type === "CLOZE_PDF"
+            ? { ...pdfSettings(), renderVersion: 1, cloze }
+            : options;
+    if (type === "CLOZE_PDF")
+        requireThat(cloze?.questions.length, 422, "QUESTIONS_REQUIRED", "確認済みの問題を選択してください");
     if (type === "MP4") {
         requireThat(options, 422, "OPTIONS_REQUIRED", "動画設定が必要です");
         if (options.mode === "GENERATED_SCENES") {
@@ -330,7 +336,7 @@ export async function renderJob(job) {
     const snap = one("SELECT * FROM export_snapshots WHERE id=?", job.snapshot_id);
     const room = JSON.parse(snap.room_data);
     let duration = 0;
-    const output = `${job.id}.${job.type === "MARKDOWN" ? "md" : job.type.toLowerCase()}`;
+    const output = `${job.id}.${job.type === "MARKDOWN" ? "md" : job.type === "CLOZE_PDF" ? "pdf" : job.type.toLowerCase()}`;
     try {
         if (job.type === "MARKDOWN") {
             const safe = (v) => v.replace(/([\\`*_{}\[\]<>#+.!|~-])/g, "\\$1");
@@ -339,6 +345,11 @@ export async function renderJob(job) {
                     .map((m) => `## ${m.sequenceNo}. ${safe(m.displayName)}\n\n${m.createdAt} / ${m.mode}\n\n${safe(m.finalText)}${m.mode === "AI_EXPANDED" ? `\n\n原文：${safe(m.originalText)}` : ""}\n`)
                     .join("\n");
             await writeFile(mediaPath(output), content, "utf8");
+        }
+        else if (job.type === "CLOZE_PDF") {
+            const options = JSON.parse(job.options);
+            const settings = pdfSettingsSchema.parse(options);
+            await writeFile(mediaPath(output), await worksheetPdf(room, options.cloze, { id: job.snapshot_id, createdAt: snap.created_at }, settings));
         }
         else if (job.type === "PDF") {
             const settings = pdfSettingsSchema.parse(JSON.parse(job.options));

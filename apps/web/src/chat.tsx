@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ClozePanel } from "./cloze-panel";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import ReactMarkdown from "react-markdown";
@@ -42,7 +43,7 @@ import type {
   ExportJob,
 } from "../../../packages/shared/src";
 type Caps = Record<
-  "MP3" | "MARKDOWN" | "PDF" | "MP4",
+  "MP3" | "MARKDOWN" | "PDF" | "CLOZE_PDF" | "MP4",
   { available: boolean; reason: string }
 >;
 import { roomBackground } from "./room-background";
@@ -297,21 +298,25 @@ export function ChatPage() {
       setPreview(null);
     });
   }
+  async function ensureSnapshot() {
+    let snap = snapshot;
+    if (!snap) {
+      const s = await api<{ id: string; count: number; at: string }>(
+        `/rooms/${roomId}/snapshots`,
+        "POST",
+      );
+      snap = {
+        id: s.id,
+        count: s.count,
+        at: s.at,
+      };
+      setSnapshot(snap);
+    }
+    return snap;
+  }
   async function startExport(type: string, video?: VideoOptions) {
     await exportAction.act(async () => {
-      let snap = snapshot;
-      if (!snap) {
-        const s = await api<{ id: string; count: number; at: string }>(
-          `/rooms/${roomId}/snapshots`,
-          "POST",
-        );
-        snap = {
-          id: s.id,
-          count: s.count,
-          at: s.at,
-        };
-        setSnapshot(snap);
-      }
+      const snap = await ensureSnapshot();
       const job = await api<ExportJob>(`/rooms/${roomId}/exports`, "POST", {
         type,
         snapshotId: snap.id,
@@ -575,10 +580,22 @@ export function ChatPage() {
             );
           })}
           <ErrorBox error={exportAction.error} />
+          <ClozePanel
+            roomId={roomId!}
+            available={!!caps.data?.CLOZE_PDF.available}
+            reason={caps.data?.CLOZE_PDF.reason || ""}
+            hasMessages={!!messages.length}
+            ensureSnapshot={ensureSnapshot}
+            onJob={(job) =>
+              setJobs((old) => [job, ...old.filter((j) => j.id !== job.id)])
+            }
+          />
           {jobs.map((j) => (
             <div className="job-card" key={j.id}>
               <div>
-                <strong>{j.type}</strong>
+                <strong>
+                  {j.type === "CLOZE_PDF" ? "穴埋め学習PDF" : j.type}
+                </strong>
                 <Badge>{j.status}</Badge>
               </div>
               {["queued", "processing"].includes(j.status) && (
