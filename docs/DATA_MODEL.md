@@ -23,6 +23,7 @@ DDLと索引は`apps/api/src/db.ts`、read modelは`schema.ts`を参照。
 | system_events          | エラー分類                        | code/requestIdのみ、機密本文を記録しない                |
 | usage_records          | API用途と利用量                   | provider/purpose/units/日時                             |
 | schema_migrations      | スキーマ版                        | バックアップから復元する前進マイグレーション            |
+| cloze_drafts | 穴埋め問題候補 | snapshot_id、作成者、原文位置・原文・用語・置換文、24時間の有効期限 |
 
 マイグレーションは複数回実行可能。外部キーは常時ON。投稿順はcreated_atではなくsequence_noを正本にする。講師更新とスナップショットの過去内容は変更しない。プロフィールはusersに、TTS設定はsettingsに、動画レンダリング設定はexport_jobs.optionsに統合して、重複する管理テーブルを避けた。
 

@@ -38,6 +38,8 @@ Cookie `sid` はHttpOnly、SameSite=Lax、本番Secure。`GET /api/me`のcsrfを
 | PATCH /api/admin/users/:id                    | 管理者再認証つきロール／状態変更                   |
 | GET/DELETE /api/admin/rooms[/:id]             | 全ルーム管理、削除理由必須                         |
 | GET /api/rooms/defaults | 新規ルームの標準値 `lecturerSpeechMaxChars`（認証必須） |
+| GET /api/rooms/:roomId/cloze-sources?snapshotId=UUID | 参加者向け、固定済み対話の出典文一覧 |
+| POST /api/rooms/:roomId/cloze-drafts | `snapshotId, mode:AUTO/MANUAL, count?, consent?, terms?:[{sourceId,term}]`。用語を元文と照合し問題候補を保存 |
 | GET/PATCH/DELETE /api/admin/pdf | 管理者用PDF設定の取得・保存・環境変数へのリセット |
 | POST /api/admin/pdf/preview | 入力設定のプレビューPDF（CSRF必須、保存しない） |
 | GET /api/admin/logs, /rankings                | 操作ログ／期間・指標別順位                         |
@@ -60,3 +62,7 @@ Socket.IO：Cookieとhandshake.auth.csrfを検証。`room:join(roomId,ack)`で�
 - `PATCH /api/admin/users/:id`：既存の`role, status, password`に加え、`email?, displayName?, bio?, newPassword?`を受け付ける。秘密値を返さず、他の更新との競合を拒否する。
 - `GET /api/admin/providers/models?purpose=TEXT&textProvider=OPENAI`：OpenAIの文章モデル候補取得。実際のResponses API対応は接続テストで確認する。
 - 文章プロバイダーとAI講師のproviderに`OPENAI`を追加。システム指示と利用者の発言を分離し、`store:false`でResponses APIを呼ぶ。
+
+穴埋めPDFは `POST /api/rooms/:roomId/exports` に `type:CLOZE_PDF, snapshotId, options:{draftId,questionIds,answers:SEPARATE（省略時もSEPARATE）}` を送信します。クライアントから問題本文を受け取らず、作成者が確認した候補だけを採用します。ジョブは既存の取得・再試行・ダウンロードAPIで管理し、参加権限・期限・管理者ON/OFFを毎回適用します。システム設定の `exportClozeEnabled` は未保存時true、`exportTextEnabled` と合わせて実効状態を判定します。
+
+`POST /api/admin/providers/test` は任意の `settings`（プロバイダー設定）を受け付けます。指定した場合は検証対象の設定を暗号化保存を含めて永続化した後、その設定で接続テストします。接続に失敗しても選択は保持し、変更された設定の検証状態は無効になります。未指定の場合は従来どおり保存済み設定をテストします。設定変更時は用途ごとの接続フィンガープリントを比較し、無関係な用途の検証状態を維持します。
